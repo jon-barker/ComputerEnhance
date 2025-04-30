@@ -1,0 +1,1 @@
+This repository contains my solutions to the homework from Casey Muratori's Computer Enhance course. I will not be sharing any course materials directly since those are for paying subscribers to the course but I will try to provide my own examples for playing with the code.
