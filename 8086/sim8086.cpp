@@ -82,7 +82,7 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
                           << data << '\n';
             } else {
                 std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
-                          << static_cast<int>(inst.DL) << '\n';
+                          << static_cast<int>(static_cast<int8_t>(inst.DL)) << '\n';
                 size = 2;
             }
             break;
