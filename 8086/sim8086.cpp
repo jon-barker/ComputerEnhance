@@ -43,16 +43,22 @@ std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wid
         int8_t disp = static_cast<int8_t>(dl);
         if (disp == 0)
             return "[" + std::string(ea[rm]) + "]";
-        return "[" + std::string(ea[rm]) + " + " + std::to_string(disp) + "]";
+        else if (disp < 0)
+            return "[" + std::string(ea[rm]) + " - " + std::to_string(std::abs(disp)) + "]";
+        else if (disp > 0)
+            return "[" + std::string(ea[rm]) + " + " + std::to_string(disp) + "]";
     }
     if (mod == 0b10) {
-        uint16_t data = make_u16(dh, dl);
-        if (data == 0)
+        int16_t disp = static_cast<int16_t>(make_u16(dh, dl));
+        if (disp == 0)
             return "[" + std::string(ea[rm]) + "]";
-        return "[" + std::string(ea[rm]) + " + " + std::to_string(data) + "]";
+        else if (disp < 0)
+            return "[" + std::string(ea[rm]) + " - " + std::to_string(std::abs(disp)) + "]";
+        else if (disp > 0)
+            return "[" + std::string(ea[rm]) + " + " + std::to_string(disp) + "]";
     }
     if (mod == 0b00 && rm == 0b110) {
-        uint16_t data = make_u16(dh, dl);
+        int16_t data = static_cast<int16_t>(make_u16(dh, dl));
         return "[" + std::to_string(data) + "]";
     }
     return "[" + std::string(ea[rm]) + "]";
