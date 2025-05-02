@@ -65,7 +65,7 @@ std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wid
 }
 
 int decode(const uint8_t* buffer, size_t buffer_size) {
-        if (buffer_size < 2) return -1;
+    if (buffer_size < 2) return -1;
 
     Instruction inst {};
     int size = 2;  // 1-byte opcode + 1-byte modrm
@@ -100,6 +100,14 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
             inst.DL = inst.DH = 0;
             size = 2;
         }
+        std::cout << "mov ";
+        if (inst.D) {
+            std::cout << registerToString(inst.REG, inst.W) << ", "
+            << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << '\n';
+        } else {
+            std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
+            << registerToString(inst.REG, inst.W) << '\n';
+        }
     } else if ((byte0 & 0b11110000) == 0b10110000) {
         // MOV r, imm
         inst.opcode = MOV_IMM_REG;
@@ -111,46 +119,53 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
             inst.DH = buffer[2];
             size = 3;
         }
+        if (buffer_size < 2) return -1;
+        if (inst.W) {
+            int data = static_cast<int16_t>(
+                (static_cast<uint16_t>(inst.DH) << 8) | inst.DL);
+            std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
+                        << data << '\n';
+        } else {
+            std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
+                        << static_cast<int>(static_cast<int8_t>(inst.DL)) << '\n';
+            size = 2;
+        }
     } else if ((byte0 & 0b11111110) == 0b11000110) {
         inst.opcode = MOV_IMM_RM;
+        inst.W = byte0 & 1;
+        inst.MOD = (byte1 >> 6) & 3;
+        inst.REG = 0; // REG is not used by MOV_IMM_RM
+        inst.RM = byte1 & 7;
+        size_t index = 2;
+        if (inst.MOD == 0b01) { // 8-bit displacement
+            if (buffer_size < index + 1) return -1;
+            inst.DL = buffer[index++];
+            inst.DH = 0;
+        } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) { // 16-bit displacement
+            if (buffer_size < index + 2) return -1;
+            inst.DL = buffer[index++];
+            inst.DH = buffer[index++];
+        } else {
+            inst.DL = inst.DH = 0;
+        }
+
+        if (buffer_size < index + (inst.W ? 2 : 1)) return -1;
+        uint8_t imm_lo = buffer[index++];
+        uint8_t imm_hi = inst.W ? buffer[index++] : 0;
+        uint16_t imm = make_u16(imm_hi, imm_lo); 
+
+        size = static_cast<int>(index);
+
+        if (inst.W) {
+            std::cout << "mov " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
+                        << "word " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
+        } else {
+            std::cout << "mov " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
+                        << "byte " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
+        }
     } else {
         std::cerr << "Unknown opcode: 0x" << std::hex << static_cast<int>(byte0) << '\n';
         return -1;
-    }
-
-    switch (inst.opcode) {
-        case MOV_RM_R:
-            std::cout << "mov ";
-            if (inst.D) {
-                std::cout << registerToString(inst.REG, inst.W) << ", "
-                << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << '\n';
-            } else {
-                std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-                << registerToString(inst.REG, inst.W) << '\n';
-            }
-            break;
-
-        case MOV_IMM_REG:
-            if (buffer_size < 2) return -1;
-            inst.W = (byte0 >> 3) & 1;
-            inst.REG = byte0 & 7;
-            inst.DL = buffer[1];
-            if (inst.W) {
-                if (buffer_size < 3) return -1;
-                inst.DH = buffer[2];
-                size = 3;
-                int data = static_cast<int16_t>(
-                    (static_cast<uint16_t>(inst.DH) << 8) | inst.DL);
-                std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
-                          << data << '\n';
-            } else {
-                std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
-                          << static_cast<int>(static_cast<int8_t>(inst.DL)) << '\n';
-                size = 2;
-            }
-            break;
-        case MOV_IMM_RM:
-            break;
     }
 
     return size;
