@@ -163,6 +163,18 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
             std::cout << "mov " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
                         << "byte " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
         }
+    } else if (byte0 == 0xA1) {
+        // mov ax, [imm16]
+        if (buffer_size < 3) return -1;
+        uint16_t addr = make_u16(buffer[2], buffer[1]);
+        std::cout << "mov ax, [" << addr << "]\n";
+        size = 3;
+    } else if (byte0 == 0xA3) {
+        // mov [imm16], ax
+        if (buffer_size < 3) return -1;
+        uint16_t addr = make_u16(buffer[2], buffer[1]);
+        std::cout << "mov [" << addr << "], ax\n";
+        size = 3;
     } else {
         std::cerr << "Unknown opcode: 0x" << std::hex << static_cast<int>(byte0) << '\n';
         return -1;
