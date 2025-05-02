@@ -28,6 +28,10 @@ std::string registerToString(int value, bool wide)
     return wide ? wideRegisters[value] : registers[value];
 }
 
+uint16_t make_u16(uint8_t dh, uint8_t dl) {
+    return static_cast<uint16_t>((static_cast<uint16_t>(dh) << 8) | dl);
+}
+
 std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wide)
 {
     static const char* ea[] = {
@@ -42,13 +46,13 @@ std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wid
         return "[" + std::string(ea[rm]) + " + " + std::to_string(disp) + "]";
     }
     if (mod == 0b10) {
-        uint16_t data = static_cast<uint16_t>((static_cast<uint16_t>(dh) << 8) | dl);
+        uint16_t data = make_u16(dh, dl);
         if (data == 0)
             return "[" + std::string(ea[rm]) + "]";
         return "[" + std::string(ea[rm]) + " + " + std::to_string(data) + "]";
     }
     if (mod == 0b00 && rm == 0b110) {
-        uint16_t data = static_cast<uint16_t>((static_cast<uint16_t>(dh) << 8) | dl);
+        uint16_t data = make_u16(dh, dl);
         return "[" + std::to_string(data) + "]";
     }
     return "[" + std::string(ea[rm]) + "]";
