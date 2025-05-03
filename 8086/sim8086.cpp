@@ -172,6 +172,32 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
         std::cout << "mov [" << addr << "], ax\n";
         size = 3;
     // ADD instructions
+    } else if (byte0 == 0x04 || byte0 == 0x05) {
+        // ADD AL/AX, imm8/imm16
+        inst.W = byte0 & 1;
+        if ((inst.W == 0 && buffer_size < 2) || (inst.W == 1 && buffer_size < 3)) return -1;
+        if (inst.W) {
+            uint16_t imm = make_u16(buffer[2], buffer[1]);
+            std::cout << "add ax, " << imm << '\n';
+            size = 3;
+        } else {
+            int8_t imm = static_cast<int8_t>(buffer[1]);
+            std::cout << "add al, " << static_cast<int>(imm) << '\n';
+            size = 2;
+        }
+    } else if (byte0 == 0x3C || byte0 == 0x3D) {
+        // CMP AL/AX, imm8/imm16
+        inst.W = byte0 & 1;
+        if ((inst.W == 0 && buffer_size < 2) || (inst.W == 1 && buffer_size < 3)) return -1;
+        if (inst.W) {
+            uint16_t imm = make_u16(buffer[2], buffer[1]);
+            std::cout << "cmp ax, " << imm << '\n';
+            size = 3;
+        } else {
+            int8_t imm = static_cast<int8_t>(buffer[1]);
+            std::cout << "cmp al, " << static_cast<int>(imm) << '\n';
+            size = 2;
+        }
     } else if ((byte0 & 0b11111100) == 0b00000000 ||  // 0x00, 0x01
          (byte0 & 0b11111110) == 0b00000010) {  // 0x02, 0x03
         // ADD r/m, r OR ADD r, r/m
@@ -209,13 +235,13 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
             std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
             << registerToString(inst.REG, inst.W) << '\n';
         }
-    } else if (((byte0 & 0b11111100) == 0b10000000) && (((byte1 >> 3) & 7) == 0b000)){
+    } else if (((byte0 & 0b11111100) == 0b10000000) && ((((byte1 >> 3) & 7) == 0b000) || (((byte1 >> 3) & 7) == 0b101) || (((byte1 >> 3) & 7) == 0b111))){
         // Group 1 instructions: ADD/SUB/etc with immediate
         uint8_t S = (byte0 >> 1) & 1;
         uint8_t W = byte0 & 1;
 
         inst.MOD = (byte1 >> 6) & 3;
-        inst.REG = (byte1 >> 3) & 7;  // must be 000 for ADD
+        inst.REG = (byte1 >> 3) & 7; 
         inst.RM  = byte1 & 7;
 
         size_t index = 2;
@@ -249,8 +275,17 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
 
         size = static_cast<int>(index);
 
-        std::cout << "add " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm << '\n';
-    } else if ((byte0 & 0b11111110) == 0b00101000) {
+        if (inst.REG == 0b000)
+            std::cout << "add ";
+        else if (inst.REG == 0b101)
+            std::cout << "sub ";
+        else if (inst.REG == 0b111)
+            std::cout << "cmp ";
+        if (inst.MOD != 0b11) {
+            std::cout << (W ? "word " : "byte ");
+        }
+        std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm << '\n';
+    } else if (byte0 == 0x04 || byte0 == 0x05) {
         // ADD imm, ax/al
         inst.W = byte0 & 1;
         inst.MOD = (byte1 >> 6) & 3;
@@ -277,48 +312,57 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
         size = static_cast<int>(index);
 
         if (inst.W) {
-            std::cout << "add " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-                        << "word " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
+            std::cout << "add ax, " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
         } else {
-            std::cout << "add " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-                        << "byte " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
+            std::cout << "add al, " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
         }
     // SUB instructions
-    } else if ((byte0 & 0b11111100) == 0b00101000) {
-        // SUB r/m, r/m
+    } else if (byte0 == 0x2C || byte0 == 0x2D) {
+        // SUB AL/AX, imm8/imm16
+        inst.W = byte0 & 1;
+        if ((inst.W == 0 && buffer_size < 2) || (inst.W == 1 && buffer_size < 3)) return -1;
+        if (inst.W) {
+            uint16_t imm = make_u16(buffer[2], buffer[1]);
+            std::cout << "sub ax, " << imm << '\n';
+            size = 3;
+        } else {
+            int8_t imm = static_cast<int8_t>(buffer[1]);
+            std::cout << "sub al, " << static_cast<int>(imm) << '\n';
+            size = 2;
+        }
+    } else if ((byte0 & 0b11111100) == 0x28 || (byte0 & 0b11111100) == 0x38) {
+        // SUB r/m, r  or  SUB r, r/m
         inst.D = (byte0 >> 1) & 1;
         inst.W = byte0 & 1;
         inst.MOD = (byte1 >> 6) & 3;
         inst.REG = (byte1 >> 3) & 7;
-        inst.RM = byte1 & 7;
+        inst.RM  = byte1 & 7;
 
-        if (inst.MOD == 0b01) { // 8-bit displacement
-            if (buffer_size < 3) return -1;
-            inst.DL = buffer[2];
+        size_t index = 2;
+        if (inst.MOD == 0b01) {
+            inst.DL = buffer[index++];
             inst.DH = 0;
             size = 3;
-        } else if (inst.MOD == 0b10) { // 16-bit displacement
-            if (buffer_size < 4) return -1;
-            inst.DL = buffer[2];
-            inst.DH = buffer[3];
-            size = 4;
-        } else if (inst.MOD == 0b00 && inst.RM == 0b110) {
-            // Special case: direct address
-            if (buffer_size < 4) return -1;
-            inst.DL = buffer[2];
-            inst.DH = buffer[3];
+        } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) {
+            inst.DL = buffer[index++];
+            inst.DH = buffer[index++];
             size = 4;
         } else {
             inst.DL = inst.DH = 0;
             size = 2;
         }
-        std::cout << "sub ";
+
+        std::string op;
+        if ((byte0 & 0b11111100) == 0x28)
+            op = "sub ";
+        else
+            op = "cmp ";
         if (inst.D) {
-            std::cout << registerToString(inst.REG, inst.W) << ", "
-            << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << '\n';
+            std::cout << op << registerToString(inst.REG, inst.W) << ", "
+                      << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << '\n';
         } else {
-            std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-            << registerToString(inst.REG, inst.W) << '\n';
+            std::cout << op << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
+                      << registerToString(inst.REG, inst.W) << '\n';
         }
     } else if (((byte0 & 0b11111100) == 0b10000000) && ((byte0 & 7) == 0b101)){
         // SUB r/m, imm
@@ -341,7 +385,7 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
                         << static_cast<int>(static_cast<int8_t>(inst.DL)) << '\n';
             size = 2;
         }
-    } else if ((byte0 & 0b11111110) == 0b00101100) {
+    } else if (byte0 == 0x2C || byte0 == 0x2D) {
         // SUB imm, ax/al
         inst.W = byte0 & 1;
         inst.MOD = (byte1 >> 6) & 3;
