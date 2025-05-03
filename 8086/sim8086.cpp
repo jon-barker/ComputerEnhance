@@ -24,7 +24,7 @@ std::string registerToString(int value, bool wide)
     return wide ? wideRegisters[value] : registers[value];
 }
 
-uint16_t make_u16(uint8_t dh, uint8_t dl) {
+uint16_t make_u16_from_bytes(uint8_t dh, uint8_t dl) {
     return static_cast<uint16_t>((static_cast<uint16_t>(dh) << 8) | dl);
 }
 
@@ -45,7 +45,7 @@ std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wid
             return "[" + std::string(ea[rm]) + " + " + std::to_string(disp) + "]";
     }
     if (mod == 0b10) {
-        int16_t disp = static_cast<int16_t>(make_u16(dh, dl));
+        int16_t disp = static_cast<int16_t>(make_u16_from_bytes(dh, dl));
         if (disp == 0)
             return "[" + std::string(ea[rm]) + "]";
         else if (disp < 0)
@@ -54,7 +54,7 @@ std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wid
             return "[" + std::string(ea[rm]) + " + " + std::to_string(disp) + "]";
     }
     if (mod == 0b00 && rm == 0b110) {
-        int16_t data = static_cast<int16_t>(make_u16(dh, dl));
+        int16_t data = static_cast<int16_t>(make_u16_from_bytes(dh, dl));
         return "[" + std::to_string(data) + "]";
     }
     return "[" + std::string(ea[rm]) + "]";
@@ -148,7 +148,7 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
         if (buffer_size < index + (inst.W ? 2 : 1)) return -1;
         uint8_t imm_lo = buffer[index++];
         uint8_t imm_hi = inst.W ? buffer[index++] : 0;
-        uint16_t imm = make_u16(imm_hi, imm_lo); 
+        uint16_t imm = make_u16_from_bytes(imm_hi, imm_lo); 
 
         size = static_cast<int>(index);
 
@@ -162,13 +162,13 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
     } else if (byte0 == 0xA1) {
         // mov ax, [imm16]
         if (buffer_size < 3) return -1;
-        uint16_t addr = make_u16(buffer[2], buffer[1]);
+        uint16_t addr = make_u16_from_bytes(buffer[2], buffer[1]);
         std::cout << "mov ax, [" << addr << "]\n";
         size = 3;
     } else if (byte0 == 0xA3) {
         // mov [imm16], ax
         if (buffer_size < 3) return -1;
-        uint16_t addr = make_u16(buffer[2], buffer[1]);
+        uint16_t addr = make_u16_from_bytes(buffer[2], buffer[1]);
         std::cout << "mov [" << addr << "], ax\n";
         size = 3;
     // ADD instructions
@@ -177,7 +177,7 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
         inst.W = byte0 & 1;
         if ((inst.W == 0 && buffer_size < 2) || (inst.W == 1 && buffer_size < 3)) return -1;
         if (inst.W) {
-            uint16_t imm = make_u16(buffer[2], buffer[1]);
+            uint16_t imm = make_u16_from_bytes(buffer[2], buffer[1]);
             std::cout << "add ax, " << imm << '\n';
             size = 3;
         } else {
@@ -190,7 +190,7 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
         inst.W = byte0 & 1;
         if ((inst.W == 0 && buffer_size < 2) || (inst.W == 1 && buffer_size < 3)) return -1;
         if (inst.W) {
-            uint16_t imm = make_u16(buffer[2], buffer[1]);
+            uint16_t imm = make_u16_from_bytes(buffer[2], buffer[1]);
             std::cout << "cmp ax, " << imm << '\n';
             size = 3;
         } else {
@@ -285,44 +285,13 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
             std::cout << (W ? "word " : "byte ");
         }
         std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm << '\n';
-    } else if (byte0 == 0x04 || byte0 == 0x05) {
-        // ADD imm, ax/al
-        inst.W = byte0 & 1;
-        inst.MOD = (byte1 >> 6) & 3;
-        inst.REG = 0; // REG is not used by MOV_IMM_RM
-        inst.RM = byte1 & 7;
-        size_t index = 2;
-        if (inst.MOD == 0b01) { // 8-bit displacement
-            if (buffer_size < index + 1) return -1;
-            inst.DL = buffer[index++];
-            inst.DH = 0;
-        } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) { // 16-bit displacement
-            if (buffer_size < index + 2) return -1;
-            inst.DL = buffer[index++];
-            inst.DH = buffer[index++];
-        } else {
-            inst.DL = inst.DH = 0;
-        }
-
-        if (buffer_size < index + (inst.W ? 2 : 1)) return -1;
-        uint8_t imm_lo = buffer[index++];
-        uint8_t imm_hi = inst.W ? buffer[index++] : 0;
-        uint16_t imm = make_u16(imm_hi, imm_lo); 
-
-        size = static_cast<int>(index);
-
-        if (inst.W) {
-            std::cout << "add ax, " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
-        } else {
-            std::cout << "add al, " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
-        }
     // SUB instructions
     } else if (byte0 == 0x2C || byte0 == 0x2D) {
         // SUB AL/AX, imm8/imm16
         inst.W = byte0 & 1;
         if ((inst.W == 0 && buffer_size < 2) || (inst.W == 1 && buffer_size < 3)) return -1;
         if (inst.W) {
-            uint16_t imm = make_u16(buffer[2], buffer[1]);
+            uint16_t imm = make_u16_from_bytes(buffer[2], buffer[1]);
             std::cout << "sub ax, " << imm << '\n';
             size = 3;
         } else {
@@ -364,7 +333,7 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
             std::cout << op << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
                       << registerToString(inst.REG, inst.W) << '\n';
         }
-    } else if (((byte0 & 0b11111100) == 0b10000000) && ((byte0 & 7) == 0b101)){
+    } else if (byte0 == 0x80) {
         // SUB r/m, imm
         inst.W = (byte0 >> 3) & 1;
         inst.REG = byte0 & 7;
@@ -384,39 +353,6 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
             std::cout << "sub " << registerToString(inst.REG, inst.W) << ", "
                         << static_cast<int>(static_cast<int8_t>(inst.DL)) << '\n';
             size = 2;
-        }
-    } else if (byte0 == 0x2C || byte0 == 0x2D) {
-        // SUB imm, ax/al
-        inst.W = byte0 & 1;
-        inst.MOD = (byte1 >> 6) & 3;
-        inst.REG = 0; // REG is not used by MOV_IMM_RM
-        inst.RM = byte1 & 7;
-        size_t index = 2;
-        if (inst.MOD == 0b01) { // 8-bit displacement
-            if (buffer_size < index + 1) return -1;
-            inst.DL = buffer[index++];
-            inst.DH = 0;
-        } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) { // 16-bit displacement
-            if (buffer_size < index + 2) return -1;
-            inst.DL = buffer[index++];
-            inst.DH = buffer[index++];
-        } else {
-            inst.DL = inst.DH = 0;
-        }
-
-        if (buffer_size < index + (inst.W ? 2 : 1)) return -1;
-        uint8_t imm_lo = buffer[index++];
-        uint8_t imm_hi = inst.W ? buffer[index++] : 0;
-        uint16_t imm = make_u16(imm_hi, imm_lo); 
-
-        size = static_cast<int>(index);
-
-        if (inst.W) {
-            std::cout << "sub " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-                        << "word " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
-        } else {
-            std::cout << "sub " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-                        << "byte " << static_cast<int>(static_cast<int16_t>(imm)) << '\n';
         }
     } else {
         std::cerr << "Unknown opcode: 0x" << std::hex << static_cast<int>(byte0) << '\n';
