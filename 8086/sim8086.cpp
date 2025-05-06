@@ -17,6 +17,33 @@ struct Instruction
     uint8_t DH;
 };
 
+std::array<std::string, 256> opcode_to_mnemonic = [] {
+    std::array<std::string, 256> arr{};
+    arr[0x70] = "jo";
+    arr[0x71] = "jno";
+    arr[0x72] = "jb";
+    arr[0x73] = "jnb";
+    arr[0x74] = "je";
+    arr[0x75] = "jne";
+    arr[0x76] = "jbe";
+    arr[0x77] = "ja";
+    arr[0x78] = "js";
+    arr[0x79] = "jns";
+    arr[0x7A] = "jp";
+    arr[0x7B] = "jnp";
+    arr[0x7C] = "jl";
+    arr[0x7D] = "jnl";
+    arr[0x7E] = "jle";
+    arr[0x7F] = "jg";
+    arr[0xE0] = "loopne";
+    arr[0xE1] = "loope";
+    arr[0xE2] = "loop";
+    arr[0xE3] = "jcxz";
+    // Add more as needed upto 256 total
+    return arr;
+}();
+
+
 std::string registerToString(int value, bool wide)
 {
     static const char *registers[] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
@@ -60,7 +87,7 @@ std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wid
     return "[" + std::string(ea[rm]) + "]";
 }
 
-int decode(const uint8_t* buffer, size_t buffer_size) {
+int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size) {
     if (buffer_size < 2) return -1;
 
     Instruction inst {};
@@ -354,6 +381,13 @@ int decode(const uint8_t* buffer, size_t buffer_size) {
                         << static_cast<int>(static_cast<int8_t>(inst.DL)) << '\n';
             size = 2;
         }
+    } else if (!opcode_to_mnemonic[byte0].empty()) {
+        if (buffer_size < 2) return -1;
+        int8_t offset = static_cast<int8_t>(buffer[1]);
+        size = 2;
+        int current_offset = static_cast<int>(buffer - base);
+        int target_address = current_offset + size + offset;
+        std::cout << opcode_to_mnemonic[byte0] << " short 0x" << std::hex << target_address << std::dec << '\n';
     } else {
         std::cerr << "Unknown opcode: 0x" << std::hex << static_cast<int>(byte0) << '\n';
         return -1;
@@ -398,7 +432,7 @@ int main(int argc, char *argv[])
     size_t i = 0;
     while (i < buffer.size()) {
         size_t remaining = buffer.size() - i;
-        int instruction_size = decode(buffer.data() + i, remaining);
+        int instruction_size = decode(buffer.data(), buffer.data() + i, remaining);
         if (instruction_size <= 0) break;  // error or unknown instruction
         i += static_cast<size_t>(instruction_size);
     }
