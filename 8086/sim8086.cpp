@@ -217,11 +217,11 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
                         ? cpu.registers[inst.REG].bytes.low
                         : cpu.registers[inst.REG - 4].bytes.high;
 
-                uint8_t curr = dest;
+                uint16_t curr = cpu.registers[inst.REG].full;
                 dest = static_cast<uint8_t>(inst.DL);
-                std::cout << " ; " << byteRegisters[inst.REG] << ":0x"
+                std::cout << " ; " << wideRegisters[inst.REG] << ":0x"
                         << std::hex << static_cast<int>(curr) << "->0x"
-                        << static_cast<int>(dest) << std::dec << '\n';
+                        << static_cast<int>(cpu.registers[inst.REG].full) << std::dec << '\n';
             } else {
                 std::cout << std::endl;
             }
