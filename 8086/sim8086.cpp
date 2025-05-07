@@ -6,6 +6,10 @@
 #include <vector>
 #include <cstdint>
 
+const bool COUNT_CYCLES=false;
+const bool DECODE=true;
+const bool SIMULATE=true;
+
 struct Instruction
 {
     uint8_t opcode;
@@ -42,8 +46,10 @@ struct CPUState {
 };
 
 enum RegisterIndex {
-    AX = 0, CX, DX, BX, SP, BP, SI, DI
+    AX = 0, CX, DX, BX, SP, BP, SI, DI, REGISTER_COUNT
 };
+
+static const char *wideRegisters[] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 
 std::array<std::string, 256> opcode_to_mnemonic = [] {
     std::array<std::string, 256> arr{};
@@ -115,7 +121,7 @@ std::string rmToString(uint8_t mod, uint8_t rm, uint8_t dh, uint8_t dl, bool wid
     return "[" + std::string(ea[rm]) + "]";
 }
 
-int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size) {
+int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUState& cpu) {
     if (buffer_size < 2) return -1;
 
     Instruction inst {};
@@ -152,13 +158,16 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size) {
             inst.DL = inst.DH = 0;
             size = 2;
         }
-        std::cout << "mov ";
-        if (inst.D) {
-            std::cout << registerToString(inst.REG, inst.W) << ", "
-            << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << '\n';
-        } else {
-            std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-            << registerToString(inst.REG, inst.W) << '\n';
+        if (COUNT_CYCLES) {}
+        if (DECODE) {
+            std::cout << "mov ";
+            if (inst.D) {
+                std::cout << registerToString(inst.REG, inst.W) << ", "
+                << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << '\n';
+            } else {
+                std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
+                << registerToString(inst.REG, inst.W) << '\n';
+            }
         }
     } else if ((byte0 & 0b11110000) == 0b10110000) {
         // MOV r, imm
@@ -175,11 +184,25 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size) {
             int data = static_cast<int16_t>(
                 (static_cast<uint16_t>(inst.DH) << 8) | inst.DL);
             std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
-                        << data << '\n';
+                        << data;
+            if (SIMULATE) {
+                uint16_t curr = cpu.registers[inst.REG].full;
+                cpu.registers[inst.REG].full = static_cast<uint16_t>((static_cast<uint16_t>(inst.DH) << 8) | inst.DL);
+                std::cout << " ; " << wideRegisters[inst.REG] << " : 0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::endl;
+            } else {
+                std::cout << std::endl;
+            }
         } else {
             std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
-                        << static_cast<int>(static_cast<int8_t>(inst.DL)) << '\n';
+                        << static_cast<int>(static_cast<int8_t>(inst.DL));
             size = 2;
+            if (SIMULATE) {
+                uint8_t curr = cpu.registers[inst.REG].bytes.low;
+                cpu.registers[inst.REG].bytes.low = static_cast<uint8_t>(static_cast<int8_t>(inst.DL));
+                std::cout << " ; " << wideRegisters[inst.REG] << " : 0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::endl;
+            } else {
+                std::cout << std::endl;
+            }
         }
     } else if ((byte0 & 0b11111110) == 0b11000110) {
         // MOV imm, r/m
@@ -455,14 +478,23 @@ int main(int argc, char *argv[])
     file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
     file.close();
 
+    CPUState cpu;
+
     std::cout << "bits 16" << '\n';
     std::cout << '\n';
     size_t i = 0;
     while (i < buffer.size()) {
         size_t remaining = buffer.size() - i;
-        int instruction_size = decode(buffer.data(), buffer.data() + i, remaining);
+        int instruction_size = decode(buffer.data(), buffer.data() + i, remaining, cpu);
         if (instruction_size <= 0) break;  // error or unknown instruction
         i += static_cast<size_t>(instruction_size);
+    }
+
+    std::cout << std::endl;
+    std::cout << "Final registers:" << std::endl;
+    for (int i = AX; i < REGISTER_COUNT; ++i) {
+        RegisterIndex reg = static_cast<RegisterIndex>(i);
+        std::cout << "      " << wideRegisters[reg] << ": 0x" << std::setfill('0') << std::setw(4) << std::hex << cpu.registers[reg].full << " (" << cpu.registers[reg].full << ")" << std::endl;
     }
 
     return 0;
