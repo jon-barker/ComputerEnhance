@@ -8,7 +8,7 @@
 
 const bool COUNT_CYCLES=false;
 const bool DECODE=true;
-const bool SIMULATE=true;
+const bool SIMULATE=false;
 
 struct Instruction
 {
@@ -40,7 +40,6 @@ struct CPUState {
     std::vector<uint8_t> memory;
     uint16_t ip = 0;
     bool zero_flag = false;
-    bool carry_flag = false;
     bool sign_flag = false;
 
     CPUState() : registers{}, memory(64 * 1024, 0) {}
@@ -366,56 +365,6 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
             std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
             << registerToString(inst.REG, inst.W) << '\n';
         }
-    } else if (((byte0 & 0b11111100) == 0b10000000) && ((((byte1 >> 3) & 7) == 0b000) || (((byte1 >> 3) & 7) == 0b101) || (((byte1 >> 3) & 7) == 0b111))){
-        // Group 1 instructions: ADD/SUB/etc with immediate
-        uint8_t S = (byte0 >> 1) & 1;
-        uint8_t W = byte0 & 1;
-
-        inst.MOD = (byte1 >> 6) & 3;
-        inst.REG = (byte1 >> 3) & 7; 
-        inst.RM  = byte1 & 7;
-
-        size_t index = 2;
-
-        if (inst.MOD == 0b01) {  // 8-bit displacement
-            if (buffer_size < index + 1) return -1;
-            inst.DL = buffer[index++];
-            inst.DH = 0;
-        } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) {  // 16-bit displacement
-            if (buffer_size < index + 2) return -1;
-            inst.DL = buffer[index++];
-            inst.DH = buffer[index++];
-        } else {
-            inst.DL = inst.DH = 0;
-        }
-
-        // Now decode the immediate
-        int16_t imm = 0;
-        if (S == 1 && W == 1) {
-            if (buffer_size < index + 1) return -1;
-            imm = static_cast<int8_t>(buffer[index++]);  // sign-extend 8-bit to 16-bit
-        } else if (W == 1) {
-            if (buffer_size < index + 2) return -1;
-            uint8_t lo = buffer[index++];
-            uint8_t hi = buffer[index++];
-            imm = static_cast<int16_t>((hi << 8) | lo);
-        } else {
-            if (buffer_size < index + 1) return -1;
-            imm = static_cast<int8_t>(buffer[index++]);  // 8-bit operand
-        }
-
-        size = static_cast<int>(index);
-
-        if (inst.REG == 0b000)
-            std::cout << "add ";
-        else if (inst.REG == 0b101)
-            std::cout << "sub ";
-        else if (inst.REG == 0b111)
-            std::cout << "cmp ";
-        if (inst.MOD != 0b11) {
-            std::cout << (W ? "word " : "byte ");
-        }
-        std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm << '\n';
         } else if (byte0 == 0x8E) {
             // MOV Sreg, r/m16
             inst.MOD = (byte1 >> 6) & 0b11;
@@ -496,6 +445,56 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
                         std::cout << '\n';
                     }
                 }
+    } else if (((byte0 & 0b11111100) == 0b10000000) && ((((byte1 >> 3) & 7) == 0b000) || (((byte1 >> 3) & 7) == 0b101) || (((byte1 >> 3) & 7) == 0b111))){
+        // Group 1 instructions: ADD/SUB/etc with immediate
+        uint8_t S = (byte0 >> 1) & 1;
+        uint8_t W = byte0 & 1;
+
+        inst.MOD = (byte1 >> 6) & 3;
+        inst.REG = (byte1 >> 3) & 7; 
+        inst.RM  = byte1 & 7;
+
+        size_t index = 2;
+
+        if (inst.MOD == 0b01) {  // 8-bit displacement
+            if (buffer_size < index + 1) return -1;
+            inst.DL = buffer[index++];
+            inst.DH = 0;
+        } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) {  // 16-bit displacement
+            if (buffer_size < index + 2) return -1;
+            inst.DL = buffer[index++];
+            inst.DH = buffer[index++];
+        } else {
+            inst.DL = inst.DH = 0;
+        }
+
+        // Now decode the immediate
+        int16_t imm = 0;
+        if (S == 1 && W == 1) {
+            if (buffer_size < index + 1) return -1;
+            imm = static_cast<int8_t>(buffer[index++]);  // sign-extend 8-bit to 16-bit
+        } else if (W == 1) {
+            if (buffer_size < index + 2) return -1;
+            uint8_t lo = buffer[index++];
+            uint8_t hi = buffer[index++];
+            imm = static_cast<int16_t>((hi << 8) | lo);
+        } else {
+            if (buffer_size < index + 1) return -1;
+            imm = static_cast<int8_t>(buffer[index++]);  // 8-bit operand
+        }
+
+        size = static_cast<int>(index);
+
+        if (inst.REG == 0b000)
+            std::cout << "add ";
+        else if (inst.REG == 0b101)
+            std::cout << "sub ";
+        else if (inst.REG == 0b111)
+            std::cout << "cmp ";
+        if (inst.MOD != 0b11) {
+            std::cout << (W ? "word " : "byte ");
+        }
+        std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm << '\n';
     // SUB instructions
     } else if (byte0 == 0x2C || byte0 == 0x2D) {
         // SUB AL/AX, imm8/imm16
@@ -624,23 +623,25 @@ int main(int argc, char *argv[])
     }
 
     std::cout << std::endl;
-    std::cout << "Final registers:" << std::endl;
-    std::array<RegisterIndex, 8> output_order = {AX, BX, CX, DX, SP, BP, SI, DI};
+    if (SIMULATE) {
+        std::cout << "Final registers:" << std::endl;
+        std::array<RegisterIndex, 8> output_order = {AX, BX, CX, DX, SP, BP, SI, DI};
 
-    for (RegisterIndex reg : output_order) {
-        std::cout << "      " << wideRegisters[reg]
-                << ": 0x" << std::setfill('0') << std::setw(4)
-                << std::hex << cpu.registers[reg].full
-                << " (" << std::dec << cpu.registers[reg].full << ")\n";
-    }
+        for (RegisterIndex reg : output_order) {
+            std::cout << "      " << wideRegisters[reg]
+                    << ": 0x" << std::setfill('0') << std::setw(4)
+                    << std::hex << cpu.registers[reg].full
+                    << " (" << std::dec << cpu.registers[reg].full << ")\n";
+        }
 
-    std::array<SegRegisterIndex, 4> seg_output_order = {ES, SS, DS, CS};
+        std::array<SegRegisterIndex, 4> seg_output_order = {ES, SS, DS, CS};
 
-    for (SegRegisterIndex reg : seg_output_order) {
-        std::cout << "      " << segmentRegisters[reg]
-                << ": 0x" << std::setfill('0') << std::setw(4)
-                << std::hex << cpu.segregisters[reg].full
-                << " (" << std::dec << cpu.segregisters[reg].full << ")\n";
+        for (SegRegisterIndex reg : seg_output_order) {
+            std::cout << "      " << segmentRegisters[reg]
+                    << ": 0x" << std::setfill('0') << std::setw(4)
+                    << std::hex << cpu.segregisters[reg].full
+                    << " (" << std::dec << cpu.segregisters[reg].full << ")\n";
+        }
     }
 
     return 0;
