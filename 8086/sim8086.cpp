@@ -1,5 +1,6 @@
 // 8086 instruction decoder
 
+#include <array>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -15,6 +16,28 @@ struct Instruction
     uint8_t RM;
     uint8_t DL;
     uint8_t DH;
+};
+
+struct CPUState {
+    // 8086 has 8 general purpose registers (AX, CX, DX, BX, SP, BP, SI, DI)
+    std::array<uint16_t, 8> registers;  // Use enum for index clarity
+
+    // Simple flat memory model (size—64KB for 16-bit address space)
+    std::vector<uint8_t> memory;
+
+    // Instruction pointer (if needed for simulation)
+    uint16_t ip = 0;
+
+    // Flags 
+    bool zero_flag = false;
+    bool carry_flag = false;
+    bool sign_flag = false;
+
+    CPUState() : registers{}, memory(64 * 1024, 0) {}
+};
+
+enum RegisterIndex {
+    AX = 0, CX, DX, BX, SP, BP, SI, DI
 };
 
 std::array<std::string, 256> opcode_to_mnemonic = [] {
