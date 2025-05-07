@@ -36,6 +36,7 @@ struct Register16 {
 
 struct CPUState {
     std::array<Register16, 8> registers;
+    std::array<Register16, 4> segregisters;
     std::vector<uint8_t> memory;
     uint16_t ip = 0;
     bool zero_flag = false;
@@ -50,7 +51,8 @@ enum RegisterIndex {
 };
 
 static const char *wideRegisters[] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
-static const char *registers[] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
+static const char *byteRegisters[] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
+static const char* segmentRegisters[] = { "es", "cs", "ss", "ds" };
 
 std::array<std::string, 256> opcode_to_mnemonic = [] {
     std::array<std::string, 256> arr{};
@@ -81,7 +83,7 @@ std::array<std::string, 256> opcode_to_mnemonic = [] {
 
 std::string registerToString(int value, bool wide)
 {
-    return wide ? wideRegisters[value] : registers[value];
+    return wide ? wideRegisters[value] : byteRegisters[value];
 }
 
 uint16_t make_u16_from_bytes(uint8_t dh, uint8_t dl) {
@@ -166,7 +168,7 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
                 if (SIMULATE) {
                     uint16_t curr = cpu.registers[inst.REG].full;
                     cpu.registers[inst.REG].full = cpu.registers[inst.RM].full;
-                    std::cout << " ; " << wideRegisters[inst.REG] << ":0x" << std::hex << curr << "->0x" << cpu.registers[inst.RM].full << std::endl;
+                    std::cout << " ; " << wideRegisters[inst.REG] << ":0x" << std::hex << curr << "->0x" << cpu.registers[inst.RM].full << std::dec << std::endl;
                 } else {
                     std::cout << std::endl;
                 }
@@ -176,7 +178,7 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
                 if (SIMULATE) {
                     uint16_t curr = cpu.registers[inst.RM].full;
                     cpu.registers[inst.RM].full = cpu.registers[inst.REG].full;
-                    std::cout << " ; " << wideRegisters[inst.RM] << ":0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::endl;
+                    std::cout << " ; " << wideRegisters[inst.RM] << ":0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::dec << std::endl;
                 } else {
                     std::cout << std::endl;
                 }
@@ -194,25 +196,32 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
         }
         if (buffer_size < 2) return -1;
         if (inst.W) {
-            int data = static_cast<int16_t>(
-                (static_cast<uint16_t>(inst.DH) << 8) | inst.DL);
+            int data = static_cast<uint16_t>(static_cast<int16_t>(
+                (static_cast<uint16_t>(inst.DH) << 8) | inst.DL));
             std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
                         << data;
             if (SIMULATE) {
                 uint16_t curr = cpu.registers[inst.REG].full;
                 cpu.registers[inst.REG].full = static_cast<uint16_t>((static_cast<uint16_t>(inst.DH) << 8) | inst.DL);
-                std::cout << " ; " << wideRegisters[inst.REG] << ":0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::endl;
+                std::cout << " ; " << wideRegisters[inst.REG] << ":0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::dec << std::endl;
             } else {
                 std::cout << std::endl;
             }
         } else {
             std::cout << "mov " << registerToString(inst.REG, inst.W) << ", "
-                        << static_cast<int>(static_cast<int8_t>(inst.DL));
+                    << static_cast<int>(static_cast<int8_t>(inst.DL));
             size = 2;
             if (SIMULATE) {
-                uint8_t curr = cpu.registers[inst.REG].bytes.low;
-                cpu.registers[inst.REG].bytes.low = static_cast<uint8_t>(static_cast<int8_t>(inst.DL));
-                std::cout << " ; " << wideRegisters[inst.REG] << " : 0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::endl;
+                uint8_t& dest =
+                    (inst.REG < 4)
+                        ? cpu.registers[inst.REG].bytes.low
+                        : cpu.registers[inst.REG - 4].bytes.high;
+
+                uint8_t curr = dest;
+                dest = static_cast<uint8_t>(inst.DL);
+                std::cout << " ; " << byteRegisters[inst.REG] << ":0x"
+                        << std::hex << static_cast<int>(curr) << "->0x"
+                        << static_cast<int>(dest) << std::dec << '\n';
             } else {
                 std::cout << std::endl;
             }
@@ -376,6 +385,41 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
             std::cout << (W ? "word " : "byte ");
         }
         std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm << '\n';
+        } else if (byte0 == 0x8E) {
+            // MOV Sreg, r/m16
+            inst.MOD = (byte1 >> 6) & 0b11;
+            inst.REG = (byte1 >> 3) & 0b111;  // Segment register index (0–3)
+            inst.RM  = byte1 & 0b111;
+
+            size_t index = 2;
+
+            if (inst.MOD == 0b01) { // 8-bit displacement
+                if (buffer_size < index + 1) return -1;
+                inst.DL = buffer[index++];
+                inst.DH = 0;
+            } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) {
+                if (buffer_size < index + 2) return -1;
+                inst.DL = buffer[index++];
+                inst.DH = buffer[index++];
+            } else {
+                inst.DL = inst.DH = 0;
+            }
+
+            size = static_cast<int>(index);
+
+            std::string source = rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, true);
+            std::string dest = segmentRegisters[inst.REG & 0b11];
+
+            if (DECODE) {
+                std::cout << "mov " << dest << ", " << source;
+                if (SIMULATE) {
+                    uint16_t curr = cpu.segregisters[inst.REG & 0b11].full;
+                    cpu.segregisters[inst.REG & 0b11].full = cpu.registers[inst.RM].full;
+                    std::cout << " ; " << segmentRegisters[inst.REG & 0b11] << ":0x" << std::hex << curr << "->0x" << cpu.segregisters[inst.REG & 0b11].full << std::dec << std::endl;
+                } else {
+                    std::cout << std::endl;
+                }
+            }
     // SUB instructions
     } else if (byte0 == 0x2C || byte0 == 0x2D) {
         // SUB AL/AX, imm8/imm16
@@ -453,7 +497,7 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
         int target_address = current_offset + size + offset;
         std::cout << opcode_to_mnemonic[byte0] << " short 0x" << std::hex << target_address << std::dec << '\n';
     } else {
-        std::cerr << "Unknown opcode: 0x" << std::hex << static_cast<int>(byte0) << '\n';
+        std::cerr << "Unknown opcode: 0x" << std::hex << static_cast<int>(byte0) << std::dec << '\n';
         return -1;
     }
 
