@@ -176,9 +176,33 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
                 std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
                 << registerToString(inst.REG, inst.W);
                 if (SIMULATE) {
-                    uint16_t curr = cpu.registers[inst.RM].full;
-                    cpu.registers[inst.RM].full = cpu.registers[inst.REG].full;
-                    std::cout << " ; " << wideRegisters[inst.RM] << ":0x" << std::hex << curr << "->0x" << cpu.registers[inst.REG].full << std::dec << std::endl;
+                    if (inst.W) {
+                        uint16_t curr = cpu.registers[inst.RM].full;
+                        cpu.registers[inst.RM].full = cpu.registers[inst.REG].full;
+                        std::cout << " ; " << wideRegisters[inst.RM]
+                                << ":0x" << std::hex << curr
+                                << "->0x" << cpu.registers[inst.RM].full << std::dec << '\n';
+                    } else {
+                        int dest_reg_index = (inst.RM < 4) ? inst.RM : inst.RM - 4;
+                        int src_reg_index  = (inst.REG < 4) ? inst.REG : inst.REG - 4;
+
+                        uint16_t curr = cpu.registers[static_cast<size_t>(dest_reg_index)].full;
+
+                        uint8_t& src = (inst.REG < 4)
+                            ? cpu.registers[static_cast<size_t>(src_reg_index)].bytes.low
+                            : cpu.registers[static_cast<size_t>(src_reg_index)].bytes.high;
+
+                        uint8_t& dest = (inst.RM < 4)
+                            ? cpu.registers[static_cast<size_t>(dest_reg_index)].bytes.low
+                            : cpu.registers[static_cast<size_t>(dest_reg_index)].bytes.high;
+
+                        dest = src;
+
+                        std::cout << " ; " << wideRegisters[static_cast<size_t>(dest_reg_index)]
+                                << ":0x" << std::hex << curr
+                                << "->0x" << cpu.registers[static_cast<size_t>(dest_reg_index)].full
+                                << std::dec << '\n';
+                    }
                 } else {
                     std::cout << std::endl;
                 }
@@ -416,9 +440,31 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
             if (DECODE) {
                 std::cout << "mov " << dest << ", " << source;
                 if (SIMULATE) {
-                    uint16_t curr = cpu.segregisters[inst.REG & 0b11].full;
-                    cpu.segregisters[inst.REG & 0b11].full = cpu.registers[inst.RM].full;
-                    std::cout << " ; " << segmentRegisters[inst.REG & 0b11] << ":0x" << std::hex << curr << "->0x" << cpu.segregisters[inst.REG & 0b11].full << std::dec << std::endl;
+                    if (inst.W) {
+                        uint16_t curr = cpu.registers[inst.RM].full;
+                        cpu.registers[inst.RM].full = cpu.registers[inst.REG].full;
+                        std::cout << " ; " << wideRegisters[inst.RM]
+                                << ":0x" << std::hex << curr
+                                << "->0x" << cpu.registers[inst.REG].full << std::dec << '\n';
+                    } else {
+                        int reg_index = inst.REG;
+                        int rm_index = inst.RM;
+
+                        uint8_t& src = (reg_index < 4)
+                            ? cpu.registers[static_cast<size_t>(reg_index)].bytes.low
+                            : cpu.registers[static_cast<size_t>(reg_index) - 4].bytes.high;
+
+                        uint8_t& dest = (rm_index < 4)
+                            ? cpu.registers[static_cast<size_t>(rm_index)].bytes.low
+                            : cpu.registers[static_cast<size_t>(rm_index) - 4].bytes.high;
+
+                        uint8_t curr = dest;
+                        dest = src;
+
+                        std::cout << " ; " << byteRegisters[rm_index]
+                                << ":0x" << std::hex << static_cast<int>(curr)
+                                << "->0x" << static_cast<int>(dest) << std::dec << '\n';
+                    }
                 } else {
                     std::cout << std::endl;
                 }
