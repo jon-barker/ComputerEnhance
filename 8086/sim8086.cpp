@@ -18,17 +18,25 @@ struct Instruction
     uint8_t DH;
 };
 
+struct Register16 {
+    union {
+        uint16_t full;
+        struct {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            uint8_t low;
+            uint8_t high;
+#else
+            uint8_t high;
+            uint8_t low;
+#endif
+        };
+    };
+};
+
 struct CPUState {
-    // 8086 has 8 general purpose registers (AX, CX, DX, BX, SP, BP, SI, DI)
-    std::array<uint16_t, 8> registers;  // Use enum for index clarity
-
-    // Simple flat memory model (size—64KB for 16-bit address space)
+    std::array<Register16, 8> registers;
     std::vector<uint8_t> memory;
-
-    // Instruction pointer (if needed for simulation)
     uint16_t ip = 0;
-
-    // Flags 
     bool zero_flag = false;
     bool carry_flag = false;
     bool sign_flag = false;
