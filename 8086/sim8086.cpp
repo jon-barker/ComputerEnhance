@@ -21,10 +21,10 @@ struct Instruction
 struct Register16 {
     union {
         uint16_t full;
-        struct {
+        struct Bytes {
             uint8_t low;
             uint8_t high;
-        };
+        } bytes;
     };
 };
 
