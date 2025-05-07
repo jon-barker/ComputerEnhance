@@ -50,6 +50,10 @@ enum RegisterIndex {
     AX = 0, CX, DX, BX, SP, BP, SI, DI, REGISTER_COUNT
 };
 
+enum SegRegisterIndex {
+    ES = 0, CS, SS, DS, SEG_REGISTER_COUNT
+};
+
 static const char *wideRegisters[] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 static const char *byteRegisters[] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 static const char* segmentRegisters[] = { "es", "cs", "ss", "ds" };
@@ -440,35 +444,58 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
             if (DECODE) {
                 std::cout << "mov " << dest << ", " << source;
                 if (SIMULATE) {
-                    if (inst.W) {
-                        uint16_t curr = cpu.registers[inst.RM].full;
-                        cpu.registers[inst.RM].full = cpu.registers[inst.REG].full;
-                        std::cout << " ; " << wideRegisters[inst.RM]
-                                << ":0x" << std::hex << curr
-                                << "->0x" << cpu.registers[inst.REG].full << std::dec << '\n';
-                    } else {
-                        int reg_index = inst.REG;
-                        int rm_index = inst.RM;
-
-                        uint8_t& src = (reg_index < 4)
-                            ? cpu.registers[static_cast<size_t>(reg_index)].bytes.low
-                            : cpu.registers[static_cast<size_t>(reg_index) - 4].bytes.high;
-
-                        uint8_t& dest = (rm_index < 4)
-                            ? cpu.registers[static_cast<size_t>(rm_index)].bytes.low
-                            : cpu.registers[static_cast<size_t>(rm_index) - 4].bytes.high;
-
-                        uint8_t curr = dest;
+                        uint16_t& dest = cpu.segregisters[inst.REG & 0b11].full;
+                        uint16_t src = cpu.registers[inst.RM].full;
+                        uint16_t curr = dest;
                         dest = src;
 
-                        std::cout << " ; " << byteRegisters[rm_index]
-                                << ":0x" << std::hex << static_cast<int>(curr)
-                                << "->0x" << static_cast<int>(dest) << std::dec << '\n';
-                    }
+                        std::cout << " ; " << segmentRegisters[inst.REG & 0b11]
+                                << ":0x" << std::hex << curr
+                                << "->0x" << dest << std::dec << '\n';
                 } else {
                     std::cout << std::endl;
                 }
             }
+            } else if (byte0 == 0x8C) {
+                // MOV r/m16, Sreg
+                inst.MOD = (byte1 >> 6) & 0b11;
+                inst.REG = (byte1 >> 3) & 0b111;  // Segment register index (0–3)
+                inst.RM  = byte1 & 0b111;
+
+                size_t index = 2;
+
+                if (inst.MOD == 0b01) { // 8-bit displacement
+                    if (buffer_size < index + 1) return -1;
+                    inst.DL = buffer[index++];
+                    inst.DH = 0;
+                } else if (inst.MOD == 0b10 || (inst.MOD == 0b00 && inst.RM == 0b110)) {
+                    if (buffer_size < index + 2) return -1;
+                    inst.DL = buffer[index++];
+                    inst.DH = buffer[index++];
+                } else {
+                    inst.DL = inst.DH = 0;
+                }
+
+                size = static_cast<int>(index);
+
+                std::string dest = rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, true);
+                std::string source = segmentRegisters[inst.REG & 0b11];
+
+                if (DECODE) {
+                    std::cout << "mov " << dest << ", " << source;
+                    if (SIMULATE) {
+                        uint16_t& dest_reg = cpu.registers[inst.RM].full;
+                        uint16_t src_val = cpu.segregisters[inst.REG & 0b11].full;
+                        uint16_t curr = dest_reg;
+                        dest_reg = src_val;
+
+                        std::cout << " ; " << wideRegisters[inst.RM]
+                                << ":0x" << std::hex << curr
+                                << "->0x" << dest_reg << std::dec << '\n';
+                    } else {
+                        std::cout << '\n';
+                    }
+                }
     // SUB instructions
     } else if (byte0 == 0x2C || byte0 == 0x2D) {
         // SUB AL/AX, imm8/imm16
@@ -605,6 +632,15 @@ int main(int argc, char *argv[])
                 << ": 0x" << std::setfill('0') << std::setw(4)
                 << std::hex << cpu.registers[reg].full
                 << " (" << std::dec << cpu.registers[reg].full << ")\n";
+    }
+
+    std::array<SegRegisterIndex, 4> seg_output_order = {ES, SS, DS, CS};
+
+    for (SegRegisterIndex reg : seg_output_order) {
+        std::cout << "      " << segmentRegisters[reg]
+                << ": 0x" << std::setfill('0') << std::setw(4)
+                << std::hex << cpu.segregisters[reg].full
+                << " (" << std::dec << cpu.segregisters[reg].full << ")\n";
     }
 
     return 0;
