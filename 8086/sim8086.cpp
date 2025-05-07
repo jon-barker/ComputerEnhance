@@ -212,16 +212,19 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
                     << static_cast<int>(static_cast<int8_t>(inst.DL));
             size = 2;
             if (SIMULATE) {
-                uint8_t& dest =
-                    (inst.REG < 4)
-                        ? cpu.registers[inst.REG].bytes.low
-                        : cpu.registers[inst.REG - 4].bytes.high;
+                int reg_index = inst.REG < 4 ? inst.REG : inst.REG - 4;
+                bool is_high = inst.REG >= 4;
 
-                uint16_t curr = cpu.registers[inst.REG].full;
+                uint8_t& dest = is_high
+                    ? cpu.registers[static_cast<size_t>(reg_index)].bytes.high
+                    : cpu.registers[static_cast<size_t>(reg_index)].bytes.low;
+
+                uint16_t curr = cpu.registers[static_cast<size_t>(reg_index)].full;
                 dest = static_cast<uint8_t>(inst.DL);
-                std::cout << " ; " << wideRegisters[inst.REG] << ":0x"
+
+                std::cout << " ; " << byteRegisters[inst.REG] << ":0x"
                         << std::hex << static_cast<int>(curr) << "->0x"
-                        << static_cast<int>(cpu.registers[inst.REG].full) << std::dec << '\n';
+                        << static_cast<int>(cpu.registers[static_cast<size_t>(reg_index)].full) << std::dec << '\n';
             } else {
                 std::cout << std::endl;
             }
