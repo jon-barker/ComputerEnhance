@@ -22,13 +22,8 @@ struct Register16 {
     union {
         uint16_t full;
         struct {
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             uint8_t low;
             uint8_t high;
-#else
-            uint8_t high;
-            uint8_t low;
-#endif
         };
     };
 };
