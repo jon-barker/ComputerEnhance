@@ -18,13 +18,15 @@ struct Instruction
     uint8_t DH;
 };
 
+struct Bytes {
+    uint8_t low;
+    uint8_t high;
+};
+
 struct Register16 {
     union {
         uint16_t full;
-        struct Bytes {
-            uint8_t low;
-            uint8_t high;
-        } bytes;
+        Bytes bytes;
     };
 };
 
