@@ -41,9 +41,17 @@ struct CPUState {
     uint16_t ip = 0;
     bool zero_flag = false;
     bool sign_flag = false;
+    bool parity_flag = false;
 
     CPUState() : registers{}, memory(64 * 1024, 0) {}
 };
+
+bool compute_parity_flag(uint8_t value) {
+    value ^= value >> 4;
+    value ^= value >> 2;
+    value ^= value >> 1;
+    return (~value) & 1;  // returns 1 if even parity
+}
 
 enum RegisterIndex {
     AX = 0, CX, DX, BX, SP, BP, SI, DI, REGISTER_COUNT
@@ -496,14 +504,29 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
         }
         std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm;
         if (SIMULATE) {
-            uint16_t curr = cpu.registers[inst.RM].full;
-            if (inst.REG == 0b000)
-                cpu.registers[inst.RM].full += imm;
-            else if (inst.REG == 0b101)
-                cpu.registers[inst.RM].full -= imm;
-            else if (inst.REG == 0b111)
-                // TODO(jbarker): add cmp case
-            std::cout << " ; " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ":0x" << curr << "->" << cpu.registers[inst.RM].full << std::endl;
+            if (SIMULATE && inst.MOD == 0b11) {
+                uint16_t curr = cpu.registers[inst.RM].full;
+                if (inst.REG == 0b000)
+                    cpu.registers[inst.RM].full += imm;
+                else if (inst.REG == 0b101)
+                    cpu.registers[inst.RM].full -= imm;
+                std::cout << " ; " << wideRegisters[inst.RM]
+                        << ":0x" << std::hex << curr
+                        << "->0x" << cpu.registers[inst.RM].full << std::dec;
+                std::cout << " flags:";
+                if (cpu.sign_flag) std::cout << "S";
+                if (cpu.parity_flag) std::cout << "P";
+                if (cpu.zero_flag) std::cout << "Z";
+                std::cout << "->";
+                cpu.zero_flag = (cpu.registers[inst.RM].full == 0);
+                cpu.sign_flag = (cpu.registers[inst.RM].full & 0x8000) != 0;
+                uint8_t lsb = cpu.registers[inst.RM].full & 0xFF;
+                cpu.parity_flag = compute_parity_flag(lsb);
+                if (cpu.sign_flag) std::cout << "S";
+                if (cpu.parity_flag) std::cout << "P";
+                if (cpu.zero_flag) std::cout << "Z";
+                std::cout << '\n';
+            }
         } else {
             std::cout << std::endl;
         }
@@ -565,22 +588,30 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
 
                     std::cout << " ; " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ":0x" << std::hex << lhs << "->0x" <<  cpu.registers[inst.RM].full << std::dec;
                     std::cout << " flags:";
-                    if (cpu.zero_flag > 0) {
-                        std::cout << "Z";
-                    }
                     if (cpu.sign_flag > 0) {
                         std::cout << "S";
+                    }
+                    if (cpu.parity_flag > 0) {
+                        std::cout << "P";
+                    }
+                    if (cpu.zero_flag > 0) {
+                        std::cout << "Z";
                     }
                     cpu.zero_flag = (result == 0);
                     cpu.sign_flag = inst.W
                         ? (result & 0x8000) != 0
                         : ((result & 0x80) != 0);
+                    uint8_t lsb = result & 0xFF;
+                    cpu.parity_flag = compute_parity_flag(lsb);
                     std::cout << "->";
-                    if (cpu.zero_flag > 0) {
-                        std::cout << "Z";
-                    }
                     if (cpu.sign_flag > 0) {
                         std::cout << "S";
+                    }
+                    if (cpu.parity_flag > 0) {
+                        std::cout << "P";
+                    }
+                    if (cpu.zero_flag > 0) {
+                        std::cout << "Z";
                     }
                     std::cout << std::endl;
             } else {
@@ -672,20 +703,29 @@ int main(int argc, char *argv[])
         std::array<RegisterIndex, 8> output_order = {AX, BX, CX, DX, SP, BP, SI, DI};
 
         for (RegisterIndex reg : output_order) {
-            std::cout << "      " << wideRegisters[reg]
-                    << ": 0x" << std::setfill('0') << std::setw(4)
-                    << std::hex << cpu.registers[reg].full
-                    << " (" << std::dec << cpu.registers[reg].full << ")\n";
+            if (cpu.registers[reg].full > 0) {
+                std::cout << "      " << wideRegisters[reg]
+                        << ": 0x" << std::setfill('0') << std::setw(4)
+                        << std::hex << cpu.registers[reg].full
+                        << " (" << std::dec << cpu.registers[reg].full << ")\n";
+            }
         }
 
         std::array<SegRegisterIndex, 4> seg_output_order = {ES, SS, DS, CS};
 
         for (SegRegisterIndex reg : seg_output_order) {
-            std::cout << "      " << segmentRegisters[reg]
-                    << ": 0x" << std::setfill('0') << std::setw(4)
-                    << std::hex << cpu.segregisters[reg].full
-                    << " (" << std::dec << cpu.segregisters[reg].full << ")\n";
+            if (cpu.segregisters[reg].full) {
+                std::cout << "      " << segmentRegisters[reg]
+                        << ": 0x" << std::setfill('0') << std::setw(4)
+                        << std::hex << cpu.segregisters[reg].full
+                        << " (" << std::dec << cpu.segregisters[reg].full << ")\n";
+            }
         }
+        std::cout << "   flags: ";
+        if (cpu.sign_flag > 0) {std::cout << "S";}
+        if (cpu.parity_flag > 0) {std::cout << "P";}
+        if (cpu.zero_flag > 0) {std::cout << "Z";}
+        std::cout << std::endl;
     }
 
     return 0;
