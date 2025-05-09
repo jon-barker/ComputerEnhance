@@ -8,7 +8,7 @@
 
 const bool COUNT_CYCLES=false;
 const bool DECODE=true;
-const bool SIMULATE=false;
+const bool SIMULATE=true;
 
 struct Instruction
 {
@@ -494,7 +494,19 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
         if (inst.MOD != 0b11) {
             std::cout << (W ? "word " : "byte ");
         }
-        std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm << '\n';
+        std::cout << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ", " << imm;
+        if (SIMULATE) {
+            uint16_t curr = cpu.registers[inst.RM].full;
+            if (inst.REG == 0b000)
+                cpu.registers[inst.RM].full += imm;
+            else if (inst.REG == 0b101)
+                cpu.registers[inst.RM].full -= imm;
+            else if (inst.REG == 0b111)
+                // TODO(jbarker): add cmp case
+            std::cout << " ; " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, W) << ":0x" << curr << "->" << cpu.registers[inst.RM].full << std::endl;
+        } else {
+            std::cout << std::endl;
+        }
     // SUB instructions
     } else if (byte0 == 0x2C || byte0 == 0x2D) {
         // SUB AL/AX, imm8/imm16
@@ -541,7 +553,39 @@ int decode(const uint8_t* base, const uint8_t* buffer, size_t buffer_size, CPUSt
                       << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << '\n';
         } else {
             std::cout << op << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ", "
-                      << registerToString(inst.REG, inst.W) << '\n';
+                      << registerToString(inst.REG, inst.W);
+            if (SIMULATE) {
+                    uint16_t lhs = cpu.registers[inst.RM].full;
+                    uint16_t rhs = cpu.registers[inst.REG].full;
+                    uint16_t result = lhs - rhs;
+
+                    if ((byte0 & 0b11111100) == 0x28) {
+                        cpu.registers[inst.RM].full = result;
+                    }
+
+                    std::cout << " ; " << rmToString(inst.MOD, inst.RM, inst.DH, inst.DL, inst.W) << ":0x" << std::hex << lhs << "->0x" <<  cpu.registers[inst.RM].full << std::dec;
+                    std::cout << " flags:";
+                    if (cpu.zero_flag > 0) {
+                        std::cout << "Z";
+                    }
+                    if (cpu.sign_flag > 0) {
+                        std::cout << "S";
+                    }
+                    cpu.zero_flag = (result == 0);
+                    cpu.sign_flag = inst.W
+                        ? (result & 0x8000) != 0
+                        : ((result & 0x80) != 0);
+                    std::cout << "->";
+                    if (cpu.zero_flag > 0) {
+                        std::cout << "Z";
+                    }
+                    if (cpu.sign_flag > 0) {
+                        std::cout << "S";
+                    }
+                    std::cout << std::endl;
+            } else {
+                std::cout << std::endl;
+            }
         }
     } else if (byte0 == 0x80) {
         // SUB r/m, imm
